@@ -1,17 +1,34 @@
-# This is hopefully going to be my master loan calculator for a home.
-# It should include:
-# - An exponential Loan calculator
-# 	- Demonstrates cost over time and splits out the interest vs principal payments over time
-# - A Tax Calculator
-# 	- That ideally adjusts for 2% property tax increase over time
-# - An Effective cost calculator
-# 	- Combinining the tax and interest cost for an effective cost rate
-# - A tax break calculator
-# 	- That shows the effective tax incentives over time.
+'''
+Loan calculator for a home.
+It includes:
+- An exponential Loan calculator
+	- Demonstrates cost over time and splits out the interest vs principal payments over time
+- A Tax Calculator
+	- That ideally adjusts for 2% property tax increase over time
+- An Effective cost calculator
+	- Combinining the tax and interest cost for an effective cost rate
+- A tax break calculator
+	- That shows the effective tax incentives over time.
 
-# Outputs should be some .csv and .txt files that can be handed over to Farzana for warm fuzzy comparison ( I <3 yuuuuuu! )
+Outputs should be some .csv and .txt files that can be handed over to Farzana for warm fuzzy comparison
 
-# Let's see how this goes. testing
+TODO - Some plot visuals of interest vs principal might be nice.  People like pictures.  
+
+Let's see how this goes.
+
+HOW TO USE:
+- Scroll down to the bottom past `if __name__ == "__main__":`
+
+- Input your home loan parameters.  All inputs should be formatted as lists.
+
+TODO - I didn't architect this very well.  Reorganizing math and csv functions into their own files, plus having a separate parameter file the user calls would
+	   be a cleaner implementation.  
+
+TODO - Clean up extraneous comments
+
+TODO - Clean up print statements into 'if debug: print(x)' type architecture.
+
+'''
 
 import math
 import csv
@@ -32,43 +49,42 @@ import os
 
 class Loan:
 	def __init__(self,homePrice,downPayment,points,intRate,loanTerm,addedPayment):
+		
+		# Initial Parameters
 		self.homePrice = homePrice
 		self.downPayment = downPayment
 		self.loanTerm = loanTerm
 		self.addedPayment = addedPayment
 		self.points = points
 		self.breakEvenMonth = 0
-
-
-		self.intRate = intRate - 0.25*points
-		
+		self.intRate = intRate - 0.25*points # Each point purchased reduces loan interest rate by 0.25%	
 		self.loanAmount = homePrice - downPayment
-		self.pointCost = self.loanAmount * 0.01 * points
+		self.pointCost = self.loanAmount * 0.01 * points # Assumes each loan point cost 1% of the loan
 
-
+		# Find minimum monthly payment and add any optional payments for a total payment
 		self.monthlyPayment = self.monthlyPayments(self.loanAmount,self.intRate,self.loanTerm)
-		
-
 		self.totalPayment = self.monthlyPayment + self.addedPayment
 		
-		
-
-
+		# Run ammortizer fnc to generate the payment schedule
 		[self.months, self.principalList, self.principalDelta, self.interestList] = self.ammortizer(homePrice,downPayment,self.intRate,self.loanTerm,self.totalPayment)
+		
+		# Factor in property taxes
 		[self.taxList,self.adjustedTaxList] = self.propTax(homePrice,loanTerm)
 
+		# Calculate the total interest cost of the loan
 		self.totalIntCost = round(sum(self.interestList),2)
-		print(self.totalIntCost)
+		print('Total interest cost of loan = $' + str(self.totalIntCost))
+
 
 	def monthlyPayments(self, loanAmount, intRate, loanTerm):
-		# This function calculates the fixed monthly payment in order to pay off a loan in a specific amount of time.
-
-		# homePrice expected in dollars
-		# downPayment expected in dollars
-		# int rate expected already as a percent 3.5 not 0.035
-		# loan length expected in years
-		#  This function checks good with online calculator!
-
+		'''
+		This function calculates the fixed monthly payment in order to pay off a loan in a specific amount of time.
+			homePrice expected in dollars
+			downPayment expected in dollars
+			intRate expected preformatted as a percent (3.5% = 3.5 - not 0.035)
+			loanTerm expected in years
+				This function checks good with an online calculator! Yay math!
+		'''
 		i = intRate/12/100 # Assumes monthly compounding
 		n = loanTerm * 12 # The plus 1 comes from 0 indexing
 
@@ -81,14 +97,29 @@ class Loan:
 
 
 	def ammortizer(self, homePrice,downPayment,intRate,loanTerm,totalPayment):
+		'''
+		This function generates the loan ammortization schedule.  It breaks down each monthly payment into the interest and principal components
+
+			homePrice expected in dollars
+			downPayment expected in dollars
+			intRate expected preformatted as a percent (3.5% = 3.5 - not 0.035)
+			loanTerm is expected in years
+			totalPayment expected in dollars
+
+		Returns 4 lists:
+			months - list of sequential months cover loan term
+			principalList - list of the remaining principal balance each month
+			principalDelta - list of how much principal was paid down from the previous month (basically the principal payment component)
+			interestList - list of how much interest was paid in that month
+		'''
 		principalList = []
 		principalDelta = []
 		interestList = []
-		loanTermMonths = loanTerm * 12 + 1
-		months = range(loanTermMonths)
+		loanTermMonths = loanTerm * 12
+		months = range(loanTermMonths + 1)
 		# print(months)
 
-		for i in range(loanTermMonths+1):
+		for i in months:
 			principalList.append(self.principalCalc(homePrice,downPayment,intRate,i,totalPayment))
 
 			if i == 0:
@@ -106,22 +137,37 @@ class Loan:
 
 
 	def propTax(self,homePrice,loanTerm):
+		'''
+		This function estimates California property taxes over the course of a loan term.  
+		It takes in the homePrice (dollars) and loanTerm (months) and returns 2 lists.
+		The first list - taxList - is a static, estimated tax cost based on the initial home value
+		The second list - adjustedTaxList - increases the home value (and thereby increases tax) by 2% each year to account for "CA Prop 13"
+		Both lists return a monthly cost
+
+		NOTE - taxList is NOT used in the rest of this script since it's likely not realistic that property tax will remain static
+		'''
 		taxList = []
 		adjustedTaxList = []
 		loanTermMonths = loanTerm * 12
+		taxRate = 1.25
 
 		for i in range(loanTermMonths+1):
-			# taxList.append(round((1.25/12/100 * homePrice),2))
-			# taxList.append(round((1.1/12/100 * homePrice),2))
-			tax = (round((1.1/12/100 * homePrice),2))
-			print tax
+			tax = (round((taxRate/12/100 * homePrice),2))
+			# print(tax)
 			taxList.append(tax)
 			year = math.floor(i/12) 
-			adjustedTaxList.append(round((1.02**(year)*taxList[0]),2)) # Plus 1 because tax still gets charged the first year
+			adjustedTaxList.append(round((1.02**(year)*taxList[0]),2)) 
 			# print(str(i+1) + ": " + str(taxList[i]) + " " + str(adjustedTaxList[i]))
 		return [taxList, adjustedTaxList]
 
 	def csvWriteOut(self):
+		# TODO - Create a timestamped directory to add all the csv files to.  Keeps it organized
+		# TODO - Add a path for the creation of things.  It probably shouldn't just generate in the script location.  Keeps git organized.
+		# TODO - Create a summary csv with just the headerStack information in the cases of multiple csv generation.
+		
+		# It would probably be useful to have something generate a summary file
+
+
 		def headerWrite(self, csvFile, writer):
 			headerStack = []
 			
@@ -135,14 +181,15 @@ class Loan:
 			headerStack.append(['Additional Payment Per Month',self.addedPayment])
 			
 			headerStack.append([''])
-			headerStack.append(['Costs'])
+			headerStack.append(['Loan Costs:'])
 			headerStack.append(['Total Interest Cost of Loan',self.totalIntCost])
-			headerStack.append(['Points Cost',self.pointCost])
+			headerStack.append(['Points Cost (#buggy?)',self.pointCost])
 			headerStack.append(['Point Break Even Month',self.breakEvenMonth])
 
 
 
 			headerStack.append([''])
+			headerStack.append(['End-Of-Year (EOY) Values:'])
 			headerStack.append(['Monthly Property Tax EOY 1', round(self.adjustedTaxList[12],2)])
 			headerStack.append(['Monthly Property Tax EOY 2', round(self.adjustedTaxList[24],2)])
 			headerStack.append(['Monthly Property Tax EOY 5', round(self.adjustedTaxList[60],2)])
@@ -159,10 +206,6 @@ class Loan:
 			headerStack.append(['Monthly Principal Payment EOY 2',round(self.principalDelta[24])])
 			headerStack.append(['Monthly Principal Payment EOY 5',round(self.principalDelta[60])])
 			headerStack.append(['Monthly Principal Payment EOY 10',round(self.principalDelta[120])])
-
-			# headerStack.append(['Property Tax EOY 2  + Interest Cost EOY 2',round(self.interestList[24] + self.adjustedTaxList[24],2)]) # 24
-			# headerStack.append(['Property Tax EOY 5  + Interest Cost EOY 5',round(self.interestList[60] + self.adjustedTaxList[60],2)]) # 60
-			# headerStack.append(['Property Tax EOY 10 + Interest Cost EOY 10',round(self.interestList[120] + self.adjustedTaxList[120],2)]) # 120
 		
 			headerStack.append([''])
 			headerStack.append([''])
@@ -195,21 +238,17 @@ class Loan:
 
 		
 			
-
-		
-
-
-
 	def principalCalc(self,homePrice, downPayment, intRate, time, payment):
+		'''
 		# This function calculates the principal balance remaining on a loan as a function of time, based on a fixed payment.
-
-		# This will get plugged into some for loop later to generate amortization schedule!
 
 		# homePrice expected in dollars
 		# downPayment expected in dollars
-		# int rate expected already as a percent 3.5 not 0.035
+		# intRate expected preformatted as a percent (3.5% = 3.5 - not 0.035)
 		# time is expected as months
-		
+
+		# Returns P - remaining principle in dollars 
+		'''
 
 		P0 = homePrice - downPayment # Initial principal
 		i = intRate/12/100 # Assumes monthly compounding
@@ -228,6 +267,11 @@ class Loan:
 		return P
 
 def breakEvenCalc(pointLoan,baseLoan):
+	'''
+	This function calculates the number of months until the initial cost of mortgage points breaks-even with the discounted interest rate
+
+	BUG - This seems to always return 51 months... so it might be buggy... 
+	'''
 	breakPrice = 0
 	pointCost = pointLoan.pointCost
 	i = 0
@@ -251,16 +295,16 @@ if __name__ == "__main__":
 	# loanTerm = [20,30]
 	# addedPayment = [00,200,400]
 
-	homePrice = [1660000] # Total cost of home (dollars)
-	downPayment = [homePrice[0]*0.2] # Total down payment (dollars)
+	homePrice = [1500000] # Total cost of home (dollars)
+	downPayment = [200000] # Total down payment (dollars)
 	intRate = [2.875] # Interest rate (2.875 = 2.875%)
 	loanTerm = [30] # Number of years of the loan (years)
 	addedPayment = [270] # Additional monthly payments on top of minimum (dollars)
-	points = [0] # Loan points applies 
+	points = [2] # Number of loan points applied
 
 
 	for price in homePrice:
-		downPayment = [price*0.2]
+		# downPayment = [price*0.2] # Uncomment to apply 20% down (or put whatever you want) to all combinations
 		for down in downPayment:
 			for rate in intRate:
 				for term in loanTerm:
